@@ -9,7 +9,7 @@
 <body>
   <div id="app">
     <header class="topbar">
-      <div class="brand">CARD BATTLE</div>
+      <div class="brand" id="brandLogo" role="button" tabindex="0" title="最初の画面に戻る">CARD BATTLE</div>
       <div id="connectionStatus" class="status">接続中...</div>
     </header>
 
@@ -68,6 +68,14 @@
         </section>
       </section>
     </main>
+  </div>
+
+  <div id="specialOverlay" class="special-overlay hidden">
+    <div class="special-box">
+      <div id="specialTitle" class="special-title"></div>
+      <div id="specialResult" class="special-result"></div>
+      <button id="specialClose" class="primary">確認</button>
+    </div>
   </div>
 
   <div id="modal" class="modal hidden">

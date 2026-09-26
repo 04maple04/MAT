@@ -136,6 +136,12 @@ function addLog(room, text) {
   if (room.log.length > 80) room.log.shift();
 }
 
+function showSpecialResult(room, title, result) {
+  for (const p of room.players) {
+    if (p.socketId) io.to(p.socketId).emit("specialResult", { title, result });
+  }
+}
+
 function alivePlayers(room) {
   return room.players.filter(p => !p.eliminated);
 }
@@ -363,6 +369,7 @@ function runTurnStartEvent(room, player) {
   room.turnSummonsUsed = 0;
   room.attacksAllowed = true;
   addLog(room, `${player.name} のターン開始時抽選：${eventName(event.id)}`);
+  showSpecialResult(room, "ターン開始時特殊抽選", eventName(event.id));
 
   switch (event.id) {
     case "auto_summon":
@@ -524,13 +531,18 @@ function performAbilityChoice(room, player, choice) {
   }
 
   if (pending.type === "destroy_enemy_one") {
-    const targetPlayer = room.players.find(p => p.id === choice.targetPlayerId && !p.eliminated && p.id !== player.id);
-    const targetCard = targetPlayer?.field.find(c => c.uid === choice.targetCardUid);
-    if (!targetPlayer || !targetCard) return false;
-    if (targetCard.power > card.power) return false;
-    if (!canEffectDestroy(targetCard)) return false;
-    destroyCard(targetPlayer, targetCard.uid);
-    addLog(room, `${player.name} の No.${card.id} が ${targetPlayer.name} のカードを1枚破壊しました。`);
+    // 「選択しない」で効果を終了できる。
+    if (choice?.skip) {
+      addLog(room, `${player.name} は No.${card.id} の破壊効果を使用せず終了しました。`);
+    } else {
+      const targetPlayer = room.players.find(p => p.id === choice.targetPlayerId && !p.eliminated && p.id !== player.id);
+      const targetCard = targetPlayer?.field.find(c => c.uid === choice.targetCardUid);
+      if (!targetPlayer || !targetCard) return false;
+      if (targetCard.power > card.power) return false;
+      if (!canEffectDestroy(targetCard)) return false;
+      destroyCard(targetPlayer, targetCard.uid);
+      addLog(room, `${player.name} の No.${card.id} が ${targetPlayer.name} のカードを1枚破壊しました。`);
+    }
   }
 
   room.pendingAbility = null;
@@ -561,6 +573,7 @@ function executeAttack(room, attackerPlayer, attackerCard, targetPlayer) {
   if (targetPlayer.life === 0) {
     const event = weightedPick(ZERO_LIFE_EVENTS);
     addLog(room, `${targetPlayer.name} はライフ0のため特殊抽選：${eventName(event.id)}`);
+    showSpecialResult(room, "ライフ0時・直接攻撃特殊抽選", eventName(event.id));
     if (event.id === "destroy_attacker") {
       destroyCard(attackerPlayer, attackerCard.uid);
       room.pendingAttack = null;

@@ -190,7 +190,7 @@ socket.on("abilityRequired",data=>{
       <h3>${escapeHtml(p.name)}</h3>
       ${p.field.map(c=>`<button class="choice-card" onclick="chooseAbility('${p.id}','${c.uid}')">No.${c.id} / POWER ${c.power} を選択</button>`).join("")||"<p>対象カードなし</p>"}
     `).join("");
-    openModal("No.03 / No.04 の効果", "<p>POWER以下の相手カードを1枚選択してください。</p>"+html);
+    openModal("No.03 / No.04 の効果", "<p>POWER以下の相手カードを1枚選択してください。</p>"+html+`<div class="modal-actions"><button onclick="skipAbility()">選択しない</button></div>`);
   }
 });
 socket.on("defenseRequired",data=>{
@@ -210,3 +210,36 @@ window.chooseAbility=(targetPlayerId,targetCardUid)=>{
     if(!res?.ok)alert(res?.error||"選択できません"); else closeModal();
   });
 };
+window.skipAbility=()=>{
+  socket.emit("abilityChoice",{choice:{skip:true}},res=>{
+    if(!res?.ok)alert(res?.error||"操作できません"); else closeModal();
+  });
+};
+
+function returnToLobby(){
+  if(!state || !state.room || state.room.status==="waiting") {
+    show("gamePanel",false); show("roomPanel",false); show("lobby",true);
+    return;
+  }
+  const ok=confirm("ゲームを退出して、最初のルーム作成・参加画面に戻りますか？");
+  if(!ok)return;
+  socket.emit("leaveRoom",()=>{
+    state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null; reconnectToken=null;
+    localStorage.removeItem("cb_roomCode");
+    localStorage.removeItem("cb_playerId");
+    localStorage.removeItem("cb_reconnectToken");
+    closeModal();
+    show("gamePanel",false); show("roomPanel",false); show("lobby",true);
+    setError("");
+  });
+}
+$("brandLogo").onclick=returnToLobby;
+$("brandLogo").onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();returnToLobby();}};
+
+function showSpecialResult(data){
+  $("specialTitle").textContent=data.title||"特殊抽選";
+  $("specialResult").textContent=data.result||"";
+  show("specialOverlay",true);
+}
+$("specialClose").onclick=()=>show("specialOverlay",false);
+socket.on("specialResult",showSpecialResult);

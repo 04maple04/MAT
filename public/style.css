@@ -53,3 +53,12 @@ hr{border:0;border-top:1px solid #374151;margin:24px 0}
   .topbar{padding:0 12px}
   main{padding:0 8px}
 }
+.brand{cursor:pointer;user-select:none}
+.brand:hover{filter:brightness(1.2)}
+.special-result{font-size:30px;font-weight:900;text-align:center;padding:28px 12px;line-height:1.4}
+.modal-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+
+.special-overlay{position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;padding:20px;z-index:100}
+.special-box{background:#1f2937;border:2px solid #60a5fa;border-radius:16px;padding:28px;max-width:620px;width:100%;text-align:center;box-shadow:0 20px 60px #0008}
+.special-title{font-size:22px;font-weight:900;color:#93c5fd}
+.special-result{font-size:30px;font-weight:900;text-align:center;padding:28px 12px;line-height:1.4}
