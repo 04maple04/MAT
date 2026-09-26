@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CARD BATTLE</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">CARD BATTLE</div>
+      <div id="connectionStatus" class="status">接続中...</div>
+    </header>
+
+    <main>
+      <section id="lobby" class="panel">
+        <h1>オンラインカードバトル</h1>
+        <p class="muted">2～4人 / ターン制 / ルームコード対戦</p>
+        <label>プレイヤー名</label>
+        <input id="playerName" maxlength="20" placeholder="名前を入力">
+        <div class="row">
+          <button id="createBtn" class="primary">ルームを作成</button>
+        </div>
+        <hr>
+        <label>ルームコード</label>
+        <input id="roomCode" maxlength="6" placeholder="例：ABC123" style="text-transform:uppercase">
+        <button id="joinBtn">ルームに参加</button>
+        <p id="lobbyError" class="error"></p>
+      </section>
+
+      <section id="roomPanel" class="panel hidden">
+        <div class="roomHead">
+          <div>
+            <h2>ルーム <span id="roomCodeView"></span></h2>
+            <p class="muted">このコードを友達に伝えてください</p>
+          </div>
+          <button id="leaveBtn" class="danger">退出</button>
+        </div>
+        <div id="playersList" class="players-list"></div>
+        <button id="startBtn" class="primary hidden">ゲーム開始</button>
+        <p id="roomMessage" class="muted"></p>
+      </section>
+
+      <section id="gamePanel" class="hidden">
+        <div id="gameHeader" class="game-header"></div>
+        <div id="opponents" class="opponents"></div>
+
+        <section class="board-center">
+          <div id="phaseText" class="phase"></div>
+          <div id="log" class="log"></div>
+        </section>
+
+        <section class="my-area">
+          <div id="myInfo" class="my-info"></div>
+          <div>
+            <h3>自分のフィールド</h3>
+            <div id="myField" class="card-grid"></div>
+          </div>
+          <div>
+            <h3>手札</h3>
+            <div id="myHand" class="card-grid hand"></div>
+          </div>
+          <div class="actions">
+            <button id="endTurnBtn" class="primary">ターン終了</button>
+            <button id="rematchBtn" class="primary hidden">再戦する</button>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <h2 id="modalTitle"></h2>
+      <div id="modalBody"></div>
+      <div id="modalActions"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
