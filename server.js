@@ -437,7 +437,8 @@ function startGame(room) {
   if (room.players.length < MIN_PLAYERS || room.players.length > MAX_PLAYERS) return false;
   room.status = "playing";
   room.phase = "main";
-  room.turnIndex = 0;
+  // ゲーム開始時の先攻プレイヤーをランダムに決定
+  room.turnIndex = Math.floor(Math.random() * room.players.length);
   room.turnNumber = 0;
   room.winnerOrder = [];
   room.log = [];
@@ -450,6 +451,7 @@ function startGame(room) {
     for (let i = 0; i < 3; i++) drawToPlayer(room, p);
   }
   addLog(room, "ゲーム開始！");
+  addLog(room, `${room.players[room.turnIndex].name} が先攻になりました。`);
   startTurn(room);
   return true;
 }
