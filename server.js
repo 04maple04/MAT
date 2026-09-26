@@ -203,6 +203,7 @@ function publicState(room, viewerId) {
       life: p.life,
       connected: p.connected,
       eliminated: p.eliminated,
+      handCount: p.hand.length,
       field: p.field.map(publicCard)
     }))
   };
@@ -547,8 +548,27 @@ function performAbilityChoice(room, player, choice) {
     }
   }
 
+  const resumeAttack = pending.resumeAttack;
   room.pendingAbility = null;
   room.phase = "main";
+
+  if (resumeAttack) {
+    // ライフ0特殊召喚などで攻撃解決の途中に発生した能力選択が完了したので、
+    // 中断していた攻撃解決(防御判定など)を再開する。
+    const attackerPlayer = room.players.find(p => p.id === resumeAttack.attackerPlayerId);
+    const attackerCard = attackerPlayer?.field.find(c => c.uid === resumeAttack.attackerCardUid);
+    const targetPlayer = room.players.find(p => p.id === resumeAttack.targetPlayerId);
+    if (attackerPlayer && attackerCard && targetPlayer && !targetPlayer.eliminated) {
+      proceedAttackResolution(room, attackerPlayer, attackerCard, targetPlayer);
+    } else {
+      // 攻撃カード自身が能力で破壊されていた等の理由で攻撃を続行できない。
+      room.pendingAttack = null;
+      addLog(room, `攻撃カードが失われたため、攻撃は不発に終わりました。`);
+      broadcast(room);
+    }
+    return true;
+  }
+
   broadcast(room);
   return true;
 }
@@ -562,6 +582,36 @@ function availableAttackCards(player, room) {
     const max = def.effect === "double_attack" ? 2 : 1;
     return c.attacksThisTurn < max;
   });
+}
+
+// 防御可否判定〜攻撃解決(防御要求 or ノーガード処理)。
+// 能力選択待ちで一時中断した攻撃を再開する場合にも呼ばれる。
+function proceedAttackResolution(room, attackerPlayer, attackerCard, targetPlayer) {
+  room.pendingAttack = {
+    attackerPlayerId: attackerPlayer.id,
+    attackerCardUid: attackerCard.uid,
+    targetPlayerId: targetPlayer.id
+  };
+
+  const defenders = targetPlayer.field.filter(c => cardDef(c.id).defend);
+  if (defenders.length) {
+    room.phase = "defense";
+    room.pendingDefense = {
+      attackerPlayerId: attackerPlayer.id,
+      attackerCardUid: attackerCard.uid,
+      targetPlayerId: targetPlayer.id
+    };
+    io.to(targetPlayer.socketId).emit("defenseRequired", {
+      attacker: {
+        playerName: attackerPlayer.name,
+        card: publicCard(attackerCard)
+      },
+      defenders: defenders.map(publicCard)
+    });
+  } else {
+    resolveNoDefense(room);
+  }
+  broadcast(room);
 }
 
 function executeAttack(room, attackerPlayer, attackerCard, targetPlayer) {
@@ -589,42 +639,43 @@ function executeAttack(room, attackerPlayer, attackerCard, targetPlayer) {
       addLog(room, "全員のフィールドを破壊しました。");
     } else if (event.id === "auto_summon") {
       summonRandom(room, targetPlayer, "ライフ0時特殊召喚");
+      if (room.pendingAbility) {
+        // 召喚されたカード(No.03/No.04など)の能力選択待ちになった。
+        // ここで攻撃解決を進めると能力選択状態を上書きしてしまうため、
+        // 能力が解決されるまで攻撃解決を一時中断し、再開情報を保存しておく。
+        room.pendingAbility.resumeAttack = {
+          attackerPlayerId: attackerPlayer.id,
+          attackerCardUid: attackerCard.uid,
+          targetPlayerId: targetPlayer.id
+        };
+        return;
+      }
     }
     // 攻撃は続行
   }
 
-  const defenders = targetPlayer.field.filter(c => cardDef(c.id).defend);
-  if (defenders.length) {
-    room.phase = "defense";
-    room.pendingDefense = {
-      attackerPlayerId: attackerPlayer.id,
-      attackerCardUid: attackerCard.uid,
-      targetPlayerId: targetPlayer.id
-    };
-    io.to(targetPlayer.socketId).emit("defenseRequired", {
-      attacker: {
-        playerName: attackerPlayer.name,
-        card: publicCard(attackerCard)
-      },
-      defenders: defenders.map(publicCard)
-    });
-  } else {
-    resolveNoDefense(room);
-  }
-  broadcast(room);
+  proceedAttackResolution(room, attackerPlayer, attackerCard, targetPlayer);
 }
 
 function resolveNoDefense(room) {
   const p = room.players.find(x => x.id === room.pendingAttack.targetPlayerId);
   if (!p) return;
-  p.life = Math.max(0, p.life - 1);
-  addLog(room, `${p.name} は攻撃を受け、ライフが1減りました。`);
   room.pendingAttack = null;
   room.pendingDefense = null;
   room.phase = "main";
+
   if (p.life === 0) {
-    addLog(room, `${p.name} のライフが0になりました。次に攻撃を受けた場合、防御できなければ敗北します。`);
+    // ライフ0の状態で防御されない攻撃を受けたので敗北(脱落)。
+    addLog(room, `${p.name} はライフ0の状態で攻撃を受け、敗北しました。`);
+    eliminatePlayer(room, p);
+  } else {
+    p.life -= 1;
+    addLog(room, `${p.name} は攻撃を受け、ライフが1減りました。`);
+    if (p.life === 0) {
+      addLog(room, `${p.name} のライフが0になりました。次に攻撃を受けた場合、防御できなければ敗北します。`);
+    }
   }
+
   broadcast(room);
 }
 

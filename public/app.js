@@ -76,7 +76,7 @@ function render(){
   $("opponents").innerHTML = state.players.filter(p=>p.id!==state.me.id).map(p=>`
     <div class="player-board ${p.id===state.room.currentPlayerId?"current":""} ${p.connected?"":"disconnected"}">
       <div><b>${escapeHtml(p.name)}</b> ${p.connected?"":"（切断中）"}</div>
-      <div>❤️ ${p.life}</div>
+      <div>❤️ ${p.life}　🂠 手札 ${p.handCount}枚</div>
       <div class="card-grid">${p.field.map(c=>cardHtml(c)).join("") || '<span class="muted">フィールドなし</span>'}</div>
     </div>`).join("");
 
