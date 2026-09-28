@@ -720,8 +720,13 @@ function executeAttack(room, attackerPlayer, attackerCard, targetPlayer) {
       return;
     }
     if (event.id === "destroy_all") {
-      destroyAllFields(room, attackerCard.uid);
-      addLog(room, "全員のフィールドを破壊しました。");
+      // 攻撃中のカードも含めて全員のフィールドを破壊し(No.20は除く)、この攻撃は中止する。
+      destroyAllFields(room);
+      room.pendingAttack = null;
+      room.phase = "main";
+      addLog(room, "全員のフィールドを破壊しました。攻撃は中止されました。");
+      broadcast(room);
+      return;
     } else if (event.id === "auto_summon") {
       summonRandom(room, targetPlayer, "ライフ0時特殊召喚");
       if (room.pendingAbility) {
