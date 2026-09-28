@@ -102,19 +102,28 @@ function render(){
   $("endTurnBtn").disabled = !myTurn;
   show("rematchBtn", state.room.status==="finished");
 
-  if(state.room.status==="finished"){
-    const order = state.room.winnerOrder.map((id,i)=>{
-      const p=state.players.find(x=>x.id===id);
-      return `<div>${i===0?"🏆":(i+1)+"位："} ${escapeHtml(p?.name||"")}</div>`;
-    }).join("");
-    openModal("ゲーム終了", `<div class="winner">${order||"結果なし"}</div>`,
-      `<button class="primary" onclick="closeModal()">閉じる</button>`);
-  } else if(state.room.status==="invalid"){
-    openModal("ゲーム無効", `<p>${escapeHtml(state.room.invalidReason||"ゲームが無効になりました。")}</p>`,
-      `<button class="primary" onclick="closeModal()">閉じる</button>`);
+  // 結果モーダルは、終了ごとに1回だけ表示する。
+  // (状態は再戦ボタンなどで何度も届くため、毎回開くと閉じても再表示されてしまう)
+  const endKind = (state.room.status==="finished"||state.room.status==="invalid") ? state.room.status : null;
+  if(!endKind){
+    resultShownKind=null;
+  } else if(resultShownKind!==endKind){
+    resultShownKind=endKind;
+    if(endKind==="finished"){
+      const order = state.room.winnerOrder.map((id,i)=>{
+        const p=state.players.find(x=>x.id===id);
+        return `<div>${i===0?"🏆":(i+1)+"位："} ${escapeHtml(p?.name||"")}</div>`;
+      }).join("");
+      openModal("ゲーム終了", `<div class="winner">${order||"結果なし"}</div>`,
+        `<button class="primary" onclick="closeModal()">閉じる</button>`);
+    } else {
+      openModal("ゲーム無効", `<p>${escapeHtml(state.room.invalidReason||"ゲームが無効になりました。")}</p>`,
+        `<button class="primary" onclick="closeModal()">閉じる</button>`);
+    }
   }
 }
 
+let resultShownKind=null;
 let modalKind=null;
 function openModal(title, body, actions="", kind=null){
   modalKind=kind;
@@ -175,7 +184,7 @@ socket.on("connect",()=>{
         localStorage.removeItem("cb_playerId");
         if(state){
           // 切断中にルームから退出扱いになった場合は、古い画面を残さずロビーへ戻す。
-          state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null;
+          state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null; resultShownKind=null;
           closeModal();
           show("gamePanel",false); show("roomPanel",false); show("lobby",true);
           setError(res?.error||"ルームから退出になりました。");
@@ -251,7 +260,7 @@ function returnToLobby(){
   const ok=confirm("ゲームを退出して、最初のルーム作成・参加画面に戻りますか？");
   if(!ok)return;
   socket.emit("leaveRoom",()=>{
-    state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null; reconnectToken=null;
+    state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null; reconnectToken=null; resultShownKind=null;
     localStorage.removeItem("cb_roomCode");
     localStorage.removeItem("cb_playerId");
     localStorage.removeItem("cb_reconnectToken");
