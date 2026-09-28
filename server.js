@@ -20,6 +20,8 @@ const MIN_PLAYERS = 2;
 const FIELD_LIMIT = 7;
 const INITIAL_LIFE = 2;
 const RECONNECT_MS = 60_000;
+// ゲーム開始前(ロビー)に切断した場合は、短い猶予で退出させる。
+const LOBBY_RECONNECT_MS = 10_000;
 
 const CARD_DEFS = [
   {id:"01", min:1000, max:4000, effect:"none", attack:true, defend:false, weight:15},
@@ -171,9 +173,40 @@ function publicCard(c) {
   };
 }
 
+// 閲覧者本人に対する未解決の選択待ち(防御選択・能力選択)。
+// 再接続時などにクライアントがモーダルを復元できるよう、状態に含めて送る。
+function pendingFor(room, viewerId) {
+  if (room.status !== "playing") return null;
+
+  const pd = room.pendingDefense;
+  if (pd && pd.targetPlayerId === viewerId) {
+    const attacker = room.players.find(p => p.id === pd.attackerPlayerId);
+    const attackerCard = attacker?.field.find(c => c.uid === pd.attackerCardUid);
+    const target = room.players.find(p => p.id === viewerId);
+    if (attacker && attackerCard && target) {
+      return {
+        kind: "defense",
+        attacker: { playerName: attacker.name, card: publicCard(attackerCard) },
+        defenders: target.field.filter(c => cardDef(c.id).defend).map(publicCard)
+      };
+    }
+  }
+
+  const pa = room.pendingAbility;
+  if (pa && pa.playerId === viewerId) {
+    const owner = room.players.find(p => p.id === viewerId);
+    const card = owner?.field.find(c => c.uid === pa.cardUid);
+    if (card) {
+      return { kind: "ability", type: pa.type, card: publicCard(card), ...pa.payload };
+    }
+  }
+  return null;
+}
+
 function publicState(room, viewerId) {
   const viewer = room.players.find(p => p.id === viewerId);
   return {
+    pending: pendingFor(room, viewerId),
     room: {
       code: room.code,
       status: room.status,
@@ -492,6 +525,54 @@ function resetForRematch(room) {
   }
 }
 
+// ロビー(ゲーム開始前)からプレイヤーを取り除く。
+// ホストが抜ける場合は、接続中のプレイヤーを優先して新ホストにする。
+function removeLobbyPlayer(room, player) {
+  room.players = room.players.filter(x => x.id !== player.id);
+  if (!room.players.length) {
+    rooms.delete(room.code);
+    return;
+  }
+  if (room.hostId === player.id) {
+    room.hostId = (room.players.find(x => x.connected) || room.players[0]).id;
+  }
+}
+
+// プレイヤーの切断時処理。
+// ロビー中は10秒、ゲーム中は60秒を過ぎても復帰しなければ処理する。
+function onPlayerDisconnected(room, p) {
+  p.connected = false;
+  p.disconnectedAt = Date.now();
+  const lobby = room.status === "waiting";
+  if (lobby) {
+    addLog(room, `${p.name} が切断しました。${LOBBY_RECONNECT_MS / 1000}秒以内に復帰しない場合は退出になります。`);
+  } else {
+    addLog(room, `${p.name} が切断しました。60秒以内に復帰してください。`);
+  }
+  broadcast(room);
+
+  if (lobby) {
+    setTimeout(() => {
+      const r = rooms.get(room.code);
+      const current = r?.players.find(x => x.id === p.id);
+      if (!current || current.connected || !current.disconnectedAt) return;
+      if (Date.now() - current.disconnectedAt < LOBBY_RECONNECT_MS) return; // 再切断で時刻が更新された場合
+      if (r.status !== "waiting") return; // 既にゲームが始まっていれば60秒ルールに任せる
+      removeLobbyPlayer(r, current);
+      addLog(r, `${current.name} は復帰しなかったため、ルームから退出しました。`);
+      broadcast(r);
+    }, LOBBY_RECONNECT_MS + 200);
+  }
+
+  setTimeout(() => {
+    const current = rooms.get(room.code)?.players.find(x => x.id === p.id);
+    if (!current || current.connected || !current.disconnectedAt) return;
+    if (Date.now() - current.disconnectedAt >= RECONNECT_MS && room.status === "playing") {
+      invalidateRoom(room, `${p.name} が60秒以内に復帰しなかったため、このゲームは無効になりました。`);
+    }
+  }, RECONNECT_MS + 500);
+}
+
 function invalidateRoom(room, reason) {
   room.status = "invalid";
   room.phase = "invalid";
@@ -528,8 +609,12 @@ function performAbilityChoice(room, player, choice) {
   if (!pending || pending.playerId !== player.id) return false;
   const card = player.field.find(c => c.uid === pending.cardUid);
   if (!card) {
+    // 能力の発動元カードが既に無い場合でも、選択待ちや中断中の攻撃を残して
+    // 進行不能にならないよう、状態をすべて解消してから戻る。
     room.pendingAbility = null;
+    room.pendingAttack = null;
     room.phase = "main";
+    broadcast(room);
     return false;
   }
 
@@ -762,7 +847,14 @@ io.on("connection", socket => {
     if (!room || !p || p.reconnectToken !== reconnectToken || p.connected || !p.disconnectedAt) {
       return cb?.({ok:false,error:"再接続できません。"});
     }
-    if (Date.now() - p.disconnectedAt > RECONNECT_MS) {
+    if (room.status === "waiting" && Date.now() - p.disconnectedAt > LOBBY_RECONNECT_MS) {
+      // ロビー中は猶予超過でルームから退出扱い(ゲームは無効にしない)。
+      removeLobbyPlayer(room, p);
+      addLog(room, `${p.name} は復帰しなかったため、ルームから退出しました。`);
+      broadcast(room);
+      return cb?.({ok:false,error:"再接続時間を超えたため、ルームから退出になりました。"});
+    }
+    if (room.status !== "waiting" && Date.now() - p.disconnectedAt > RECONNECT_MS) {
       invalidateRoom(room, `${p.name} が60秒以内に復帰しなかったため、このゲームは無効になりました。`);
       return cb?.({ok:false,error:"再接続時間を超えました。"});
     }
@@ -783,6 +875,7 @@ io.on("connection", socket => {
     const p = validatePlayer(socket, room);
     if (!room || !p || room.hostId !== p.id) return cb?.({ok:false,error:"ゲームを開始できません。"});
     if (room.players.length < MIN_PLAYERS) return cb?.({ok:false,error:"2人以上必要です。"});
+    if (room.players.some(x => !x.connected)) return cb?.({ok:false,error:"切断中のプレイヤーがいるため開始できません。"});
     startGame(room);
     cb?.({ok:true});
     broadcast(room);
@@ -871,9 +964,7 @@ io.on("connection", socket => {
     if (room.status === "playing") {
       invalidateRoom(room, `${p.name} が退出したため、このゲームは無効になりました。`);
     } else {
-      room.players = room.players.filter(x => x.id !== p.id);
-      if (!room.players.length) rooms.delete(room.code);
-      else if (room.hostId === p.id) room.hostId = room.players[0].id;
+      removeLobbyPlayer(room, p);
       broadcast(room);
     }
     socket.leave(room.code);
@@ -886,18 +977,7 @@ io.on("connection", socket => {
     const p = validatePlayer(socket, room);
     if (!room || !p) return;
     if (p.socketId !== socket.id) return;
-    p.connected = false;
-    p.disconnectedAt = Date.now();
-    addLog(room, `${p.name} が切断しました。60秒以内に復帰してください。`);
-    broadcast(room);
-
-    setTimeout(() => {
-      const current = rooms.get(room.code)?.players.find(x => x.id === p.id);
-      if (!current || current.connected || !current.disconnectedAt) return;
-      if (Date.now() - current.disconnectedAt >= RECONNECT_MS && room.status === "playing") {
-        invalidateRoom(room, `${p.name} が60秒以内に復帰しなかったため、このゲームは無効になりました。`);
-      }
-    }, RECONNECT_MS + 500);
+    onPlayerDisconnected(room, p);
   });
 });
 
