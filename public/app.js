@@ -115,13 +115,21 @@ function render(){
   }
 }
 
-function openModal(title, body, actions=""){
+let modalKind=null;
+function openModal(title, body, actions="", kind=null){
+  modalKind=kind;
   $("modalTitle").textContent=title;
   $("modalBody").innerHTML=body;
   $("modalActions").innerHTML=actions;
   show("modal",true);
 }
-function closeModal(){show("modal",false);}
+// kind指定時は、そのモーダルが現在表示中の場合のみ閉じる。
+// (能力選択の応答が届く前に防御モーダルが開かれることがあり、それを誤って閉じないため)
+function closeModal(kind=null){
+  if(typeof kind==="string" && modalKind!==kind) return;
+  modalKind=null;
+  show("modal",false);
+}
 
 window.summon = uid => {
   socket.emit("summonFromHand",{uid},res=>{if(!res?.ok) alert(res?.error||"召喚できません");});
@@ -130,7 +138,7 @@ window.attack = uid => {
   socket.emit("attack",{uid},res=>{if(!res?.ok) alert(res?.error||"攻撃できません");});
 };
 window.defend = uid => {
-  socket.emit("defend",{uid},res=>{if(!res?.ok) alert(res?.error||"防御できません"); else closeModal();});
+  socket.emit("defend",{uid},res=>{if(!res?.ok) alert(res?.error||"防御できません"); else closeModal("defense");});
 };
 
 $("createBtn").onclick=()=>{
@@ -165,6 +173,13 @@ socket.on("connect",()=>{
       if(!res?.ok){
         localStorage.removeItem("cb_roomCode");
         localStorage.removeItem("cb_playerId");
+        if(state){
+          // 切断中にルームから退出扱いになった場合は、古い画面を残さずロビーへ戻す。
+          state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null;
+          closeModal();
+          show("gamePanel",false); show("roomPanel",false); show("lobby",true);
+          setError(res?.error||"ルームから退出になりました。");
+        }
       }
     });
   }
@@ -183,36 +198,48 @@ socket.on("state",s=>{
   if(savedPlayerId)localStorage.setItem("cb_playerId",savedPlayerId);
   if(reconnectToken)localStorage.setItem("cb_reconnectToken",reconnectToken);
   render();
+  syncPendingModal();
 });
-socket.on("abilityRequired",data=>{
-  if(data.type==="destroy_enemy_one"){
-    const html=state.players.filter(p=>p.id!==state.me.id&&!p.eliminated).map(p=>`
-      <h3>${escapeHtml(p.name)}</h3>
-      ${p.field.map(c=>`<button class="choice-card" onclick="chooseAbility('${p.id}','${c.uid}')">No.${c.id} / POWER ${c.power} を選択</button>`).join("")||"<p>対象カードなし</p>"}
-    `).join("");
-    openModal("No.03 / No.04 の効果", "<p>POWER以下の相手カードを1枚選択してください。</p>"+html+`<div class="modal-actions"><button onclick="skipAbility()">選択しない</button></div>`);
-  }
-});
-socket.on("defenseRequired",data=>{
+// 防御選択・能力選択のモーダルは、サーバーから届く state.pending を元に表示する。
+// (再接続直後や、イベントと状態の到着順が前後した場合でも常に正しく復元・同期できる)
+function showAbilityModal(data){
+  if(data.type!=="destroy_enemy_one") return;
+  const html=state.players.filter(p=>p.id!==state.me.id&&!p.eliminated).map(p=>`
+    <h3>${escapeHtml(p.name)}</h3>
+    ${p.field.map(c=>`<button class="choice-card" onclick="chooseAbility('${p.id}','${c.uid}')">No.${c.id} / POWER ${c.power} を選択</button>`).join("")||"<p>対象カードなし</p>"}
+  `).join("");
+  openModal("No.03 / No.04 の効果", "<p>POWER以下の相手カードを1枚選択してください。</p>"+html+`<div class="modal-actions"><button onclick="skipAbility()">選択しない</button></div>`, "", "ability");
+}
+function showDefenseModal(data){
   openModal("防御を選択",`
     <p>${escapeHtml(data.attacker.playerName)} の No.${data.attacker.card.id}（POWER ${data.attacker.card.power}）の攻撃です。</p>
     <p>防御する場合はカードを1枚選択してください。防御カードは必ず消滅します。</p>
     <button class="danger" onclick="takeAttack()">防御せず攻撃を受ける</button>
     <hr>
     ${data.defenders.map(c=>cardHtml(c,"defense")).join("")}
-  `);
-});
+  `, "", "defense");
+}
+function syncPendingModal(){
+  const pend=state?.pending||null;
+  if(pend?.kind==="defense"){
+    if(modalKind!=="defense") showDefenseModal(pend);
+  }else if(pend?.kind==="ability"){
+    if(modalKind!=="ability") showAbilityModal(pend);
+  }else if(modalKind==="defense"||modalKind==="ability"){
+    closeModal(); // 選択待ちが解消済みなのに残っている古いモーダルを閉じる
+  }
+}
 window.takeAttack=()=>{
-  socket.emit("takeAttack",res=>{if(!res?.ok)alert(res?.error||"操作できません");else closeModal();});
+  socket.emit("takeAttack",res=>{if(!res?.ok)alert(res?.error||"操作できません");else closeModal("defense");});
 };
 window.chooseAbility=(targetPlayerId,targetCardUid)=>{
   socket.emit("abilityChoice",{choice:{targetPlayerId,targetCardUid}},res=>{
-    if(!res?.ok)alert(res?.error||"選択できません"); else closeModal();
+    if(!res?.ok)alert(res?.error||"選択できません"); else closeModal("ability");
   });
 };
 window.skipAbility=()=>{
   socket.emit("abilityChoice",{choice:{skip:true}},res=>{
-    if(!res?.ok)alert(res?.error||"操作できません"); else closeModal();
+    if(!res?.ok)alert(res?.error||"操作できません"); else closeModal("ability");
   });
 };
 
