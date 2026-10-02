@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MAT</title>
+  <title>CARD BATTLE</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <div id="app">
     <header class="topbar">
-      <div class="brand" id="brandLogo" role="button" tabindex="0" title="最初の画面に戻る">MAT</div>
+      <div class="brand" id="brandLogo" role="button" tabindex="0" title="最初の画面に戻る">CARD BATTLE</div>
       <div id="connectionStatus" class="status">接続中...</div>
     </header>
 
     <main>
       <section id="lobby" class="panel">
-        <h1>ミニアグロタワー</h1>
+        <h1>オンラインカードバトル</h1>
         <p class="muted">2～4人 / ターン制 / ルームコード対戦</p>
         <label>プレイヤー名</label>
         <input id="playerName" maxlength="20" placeholder="名前を入力">
@@ -33,7 +33,7 @@
         <div class="roomHead">
           <div>
             <h2>ルーム <span id="roomCodeView"></span></h2>
-            <p class="muted">このコードを対戦相手に伝えてください</p>
+            <p class="muted">このコードを友達に伝えてください</p>
           </div>
           <button id="leaveBtn" class="danger">退出</button>
         </div>
@@ -64,6 +64,7 @@
           <div class="actions">
             <button id="endTurnBtn" class="primary">ターン終了</button>
             <button id="rematchBtn" class="primary hidden">再戦する</button>
+            <div id="rematchStatus" class="muted hidden"></div>
           </div>
         </section>
       </section>

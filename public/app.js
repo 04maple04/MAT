@@ -100,7 +100,18 @@ function render(){
 
   const myTurn = state.room.currentPlayerId===state.me.id && state.room.phase==="main";
   $("endTurnBtn").disabled = !myTurn;
-  show("rematchBtn", state.room.status==="finished");
+  // 再戦ボタン: 自分が既に再戦希望済みなら「待っています」表示にし、二重送信できないようにする。
+  // 他のプレイヤーの準備状況は、結果モーダルを閉じても常に見える専用欄に表示する。
+  const finished = state.room.status==="finished";
+  show("rematchBtn", finished);
+  show("rematchStatus", finished);
+  if(finished){
+    const me = state.players.find(p=>p.id===state.me.id);
+    $("rematchBtn").disabled = !!me?.rematchReady;
+    $("rematchBtn").textContent = me?.rematchReady ? "他プレイヤーの再戦を待っています…" : "再戦する";
+    const readyList = state.players.map(p=>`${escapeHtml(p.name)}: ${p.rematchReady?"準備完了":(p.connected?"未回答":"切断中")}`).join(" / ");
+    $("rematchStatus").textContent = "再戦状況　"+readyList;
+  }
 
   // 結果モーダルは、終了ごとに1回だけ表示する。
   // (状態は再戦ボタンなどで何度も届くため、毎回開くと閉じても再表示されてしまう)
@@ -170,7 +181,18 @@ $("joinBtn").onclick=()=>{
   });
 };
 $("startBtn").onclick=()=>socket.emit("startGame",res=>{if(!res?.ok)alert(res?.error);});
-$("leaveBtn").onclick=()=>socket.emit("leaveRoom");
+$("leaveBtn").onclick=()=>{
+  socket.emit("leaveRoom",()=>{
+    // brandLogoからの退出と同様に、確実に画面をロビーへ戻す。
+    state=null; roomCode=null; savedRoomCode=null; savedPlayerId=null; reconnectToken=null; resultShownKind=null;
+    localStorage.removeItem("cb_roomCode");
+    localStorage.removeItem("cb_playerId");
+    localStorage.removeItem("cb_reconnectToken");
+    closeModal();
+    show("gamePanel",false); show("roomPanel",false); show("lobby",true);
+    setError("");
+  });
+};
 $("endTurnBtn").onclick=()=>socket.emit("endTurn");
 $("rematchBtn").onclick=()=>socket.emit("rematch",res=>{if(!res?.ok)alert(res?.error);});
 
@@ -217,7 +239,7 @@ function showAbilityModal(data){
     <h3>${escapeHtml(p.name)}</h3>
     ${p.field.map(c=>`<button class="choice-card" onclick="chooseAbility('${p.id}','${c.uid}')">No.${c.id} / POWER ${c.power} を選択</button>`).join("")||"<p>対象カードなし</p>"}
   `).join("");
-  openModal("No.03 / No.04 の効果", "<p>POWER以下の相手カードを1枚選択してください。</p>"+html+`<div class="modal-actions"><button onclick="skipAbility()">選択しない</button></div>`, "", "ability");
+  openModal("No.03 / No.04 の効果", `<p>POWER ${data.card.power} 以下の相手カードを選択してください。</p>`+html+`<div class="modal-actions"><button onclick="skipAbility()">選択しない</button></div>`, "", "ability");
 }
 function showDefenseModal(data){
   openModal("防御を選択",`
