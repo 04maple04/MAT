@@ -237,6 +237,7 @@ function publicState(room, viewerId) {
       connected: p.connected,
       eliminated: p.eliminated,
       handCount: p.hand.length,
+      rematchReady: !!p.rematchReady,
       field: p.field.map(publicCard)
     }))
   };
